@@ -50,7 +50,7 @@
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
-              maxBytes: 65536
+              maxBytes: 16384        # AGENTS.md 一类说明文件的上限；standard 是 65536（约 1.6 万 token，32k 窗口装不下）
           - id: tool-bash
             name: '@deepseek-ai/dsh-tool-bash'
             disabled: !!js process.platform === 'win32'
@@ -59,6 +59,8 @@
             disabled: !!js process.platform !== 'win32'
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              readMaxBytes: 16384    # 单次读文件最多返回 16 KB；默认 51200，一次能吃掉一万多 token
           - id: tool-fs-search
             name: '@deepseek-ai/dsh-tool-fs-search'
             config:
@@ -109,11 +111,18 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
+              fetchMaxOutputChars: 12000   # 默认 200000
           - id: present
             name: '@deepseek-ai/dsh-tool-present'
 - id: agent-preset-registry
   config:
     default: local32k
+
+# 单次工具输出（命令行、搜索、网页等，读文件不归它管）塞进上下文的上限：默认 12500 token，占 32k 窗口的 38%
+# 超出部分落盘、上下文里只留头尾和文件路径。注意：下面压缩组里的 tool-result-pruner 只在压缩时才截，管不了单次输出
+- id: spill-policy
+  config:
+    maxInlineTokens: 4000
 
 # ③ 选目录用网页里的对话框。本机 + Windows 时自动选择器会选原生窗口（弹在桌面上）
 # 补丁不能改已有条目的插件名 → 关掉自动选择器，另插 browse 的两半（本机服务 + 网页界面）；只插一半的话「添加工作区」按钮会消失

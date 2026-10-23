@@ -1,6 +1,6 @@
 # moe-on-32gb
 
-> **English summary.** Run **Qwen3.6-35B-A3B** (MoE: 35B total, ~3B active per token) locally on a **32 GB RAM + 12 GB VRAM** laptop with stock llama.cpp — no custom engine. Experts that don't fit in VRAM live in system RAM (`--fit on`), the model is loaded without mmap (`--load-mode none`, the key flag on a 32 GB machine), context is 32k, and sampling is tuned to stop agent tool-call loops. On an RTX 5070 Ti Laptop (12 GB) with llama.cpp b11836, the default profile (`-ub 2048 -b 2048 --cache-ram 1024`) reads prompts at ~2,800 tok/s and generates ~57 tok/s; the fast profile adds the new GPU expert cache (`--moe-cache-mib 2048`) for ~75 tok/s generation at the cost of ~2 GB more RAM. Everything else we found online (MTP, DFlash, ik_llama.cpp, larger ubatch, offload thresholds, alternative anti-repetition settings) was measured and rejected — see `docs/benchmarks.md` and the benchmark script in `bench/`. One script (`start-llama.sh`) plus a per-flag explanation (`docs/params.md`), and a ready-to-use patch for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh/`, `docs/dsh.md`): local provider, a lean preset, and compaction thresholds recomputed for a 32k window (with the stock 65,536-token headroom, compaction never triggers on windows under ~70k). The idea of "experts in RAM, the rest on GPU" comes from [Strata](https://github.com/Niko1221/Strata), which targets a 125B model and needs 64 GB RAM; this repo is the 32 GB route. It is not based on Strata's code.
+> **English summary.** Run **Qwen3.6-35B-A3B** (MoE: 35B total, ~3B active per token) locally on a **32 GB RAM + 12 GB VRAM** laptop with stock llama.cpp — no custom engine. Experts that don't fit in VRAM live in system RAM (`--fit on`), the model is loaded without mmap (`--load-mode none`, the key flag on a 32 GB machine), context is 32k, and sampling uses Qwen's official non-thinking values with presence penalty 1.5 — we measured that the DRY sampler (which we used before) corrupts long file paths the agent has to copy from its system prompt (26/72 vs 72/72 exact). On an RTX 5070 Ti Laptop (12 GB) with llama.cpp b11840, the default profile (`-ub 2048 -b 2048 --cache-ram 1024`) reads prompts at ~2,800 tok/s and generates ~57 tok/s; the fast profile adds the new GPU expert cache (`--moe-cache-mib 2048`) for ~75 tok/s generation at the cost of ~2 GB more RAM. Everything else we found online (MTP, DFlash, ik_llama.cpp, larger ubatch, offload thresholds, longer context, f16 KV) was measured and rejected — see `docs/benchmarks.md` and the benchmark script in `bench/`. One script (`start-llama.sh`) plus a per-flag explanation (`docs/params.md`), and a ready-to-use patch for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh/`, `docs/dsh.md`): local provider, a lean preset, and compaction thresholds recomputed for a 32k window (with the stock 65,536-token headroom, compaction never triggers on windows under ~70k), and per-tool output caps cut from 12,500 to 4,000 tokens. The idea of "experts in RAM, the rest on GPU" comes from [Strata](https://github.com/Niko1221/Strata), which targets a 125B model and needs 64 GB RAM; this repo is the 32 GB route. It is not based on Strata's code.
 
 在 **32 GB 内存 + 12 GB 显存** 的笔记本上，用原版 llama.cpp 跑 **Qwen3.6-35B-A3B**（MoE：总共 35B 参数，每个字只用约 3B），当本地 Agent 的模型。不用另装推理引擎：一个启动脚本 + 每个参数为什么这么设；另附接 DeepSeek Harness（DSH）的补丁和启动脚本。
 
@@ -29,7 +29,7 @@ Strata 跑的是 125B 的模型，中文正常的版本要 64 GB 内存，32 GB 
 
 环境：ROG Strix G16（AMD Ryzen 9 9955HX3D、RTX 5070 Ti Laptop 12 GB、32 GB DDR5）、Windows 11。
 
-### 2026-10-23 优化后（llama.cpp b11836）
+### 2026-10-23 优化后（llama.cpp b11836 / b11840）
 
 | | 优化前（b11259，默认批次） | **默认** | **快速**（`MOE_CACHE_MIB=2048`） |
 |---|---|---|---|
@@ -42,6 +42,12 @@ Strata 跑的是 125B 的模型，中文正常的版本要 64 GB 内存，32 GB 
 - **快速**：写得快，内存多约 2 GB；按 Agent 一步「读 200、写 200 token」算，每步快约 16%
 
 每一项怎么测的、网上还有哪些办法测了没用（MTP、DFlash、ik_llama.cpp、更大的批次……），见 [docs/benchmarks.md](docs/benchmarks.md)。
+
+下午又在真的 DSH 里测了一轮，改了两处：
+- **防复读从 DRY 换成 `presence_penalty 1.5`**：DRY 会把系统提示里的工作目录路径抄错（`deepseek-hardware`、`deepsee-harness`），读文件失败、多绕好几步。工作目录在系统提示里、一次用完整路径读 6 个文件，DRY 时 72 条只对 26 条，换了以后 72/72；同一个 DSH 任务从 4 到十几步降到 3 步
+- **DSH 单次工具输出上限 12,500 → 4,000 token**（还有读文件 50 KB → 16 KB 等），见 [docs/dsh.md](docs/dsh.md)
+
+也测了 64k、128k 上下文（64k 只慢约 3%，可选）和 KV f16（没好处）。实测 DSH 每一步只重读新加的部分，时间主要花在生成上。
 
 ### 2026-10-03 换模型时（llama.cpp b11259）
 
@@ -64,7 +70,7 @@ Strata 跑的是 125B 的模型，中文正常的版本要 64 GB 内存，32 GB 
 
 ## 怎么用
 
-1. **llama.cpp**：从 [llama.cpp Releases](https://github.com/ggml-org/llama.cpp/releases) 下 CUDA 版（测过的是 b11836 + CUDA 13.4；Windows 要连同 cudart 那个包一起解压）。专家缓存 `--moe-cache-mib` 要 2026-10-07 以后的版本；新版的默认端口改成了 9931，脚本里写死了 8081。更新的版本应该也行，但参数名可能会变
+1. **llama.cpp**：从 [llama.cpp Releases](https://github.com/ggml-org/llama.cpp/releases) 下 CUDA 版（测过的是 b11840 + CUDA 13.4，b11840 修了 Windows 上连续运行约 10.5 天会崩溃的问题；Windows 要连同 cudart 那个包一起解压）。专家缓存 `--moe-cache-mib` 要 2026-10-07 以后的版本；新版的默认端口改成了 9931，脚本里写死了 8081。更新的版本应该也行，但参数名可能会变
 2. **模型**：[unsloth/Qwen3.6-35B-A3B-GGUF](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) 里的 `Qwen3.6-35B-A3B-UD-IQ4_XS.gguf`（17,730,509,792 字节）。模型是阿里的，Apache 2.0
 3. **密钥文件** `llama.key`：第一行 `#` 注释，第二行一个随机串，比如
    ```bash
@@ -103,7 +109,7 @@ curl http://127.0.0.1:8081/v1/chat/completions \
 
 1. `--load-mode none`：不映射模型文件。默认映射时系统剩余内存最低掉到 0.34 GB，不映射还剩 5.1 GB，速度还从 51 提到 62 token/秒
 2. `-ub 2048 -b 2048`：读提示快将近一倍。放在内存里的专家，读长提示时要按批整块拷到显卡上算，批次越大拷得越少
-3. 采样用 Qwen3 官方推荐值 + DRY 防复读：llama.cpp 默认采样下，Agent 填工具参数会陷进复读、写满输出上限
+3. 采样用 Qwen3.6 官方推荐值（含 `presence_penalty 1.5`）：llama.cpp 默认采样下 Agent 填工具参数会陷进复读；之前用的 DRY 防复读又会把工作目录这种长路径抄错（实测 26/72 一字不差，换成 presence 后 72/72）
 4. 默认设置不安全（不要密钥、任何网页都能跨域调、`/slots` 能看到对话），脚本里都改了
 
 ## 许可

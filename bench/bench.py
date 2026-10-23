@@ -93,17 +93,26 @@ def agent_turns(srv, ctx_words, side=False):
 
 COPY_PATHS = [f"D:\\workspace\\项目甲\\第{n}版\\输出\\歌曲_扒谱_定稿（10-07_23.{n}0存）\\track_{n:02d}_vocal_main.svp"
               for n in range(1, 7)]
+# 像 Agent 框架那样：工作目录写在系统提示里，用户只说文件名，模型要自己把长路径再写一遍
+CWD = "C:\\Users\\demo\\Documents\\deepseek-harness\\default-workspace"
+CWD_FILES = ["notes.txt", "todo.txt", "data.csv", "plan.md", "readme.md", "config.json"]
 
 
-def copy_test(srv, runs, temperature):
-    """抄长路径：6 条前缀很长、彼此相似的路径，让模型逐个调 read_file。数参数里的路径一字不差的有几条。
-    防复读（DRY）会罚刚出现过的长片段，路径里的 \\ 和 / 又不是它的断点，可能把模型推着抄错。"""
-    listing = "\n".join(COPY_PATHS)
+def copy_test(srv, runs, temperature, cwd_mode=False):
+    """抄长路径：让模型在一条回复里调 6 次 read_file，数参数里的路径一字不差的有几条。
+    防复读（DRY）会罚刚出现过的长片段，路径里的 \\ 和 / 又不是它的断点，可能把模型推着抄错。
+    cwd_mode=False：6 条中文长路径写在用户消息里。cwd_mode=True：工作目录在系统提示里，用户只给文件名（DSH 的真实情况）。"""
+    expected = [f"{CWD}\\{f}" for f in CWD_FILES] if cwd_mode else COPY_PATHS
     ok = total = calls = 0
     wrong = []
     for r in range(runs):
-        msgs = [{"role": "system", "content": "你是一个 Agent。调用工具时，路径必须和用户给的一字不差。"},
-                {"role": "user", "content": f"下面 6 个文件，请依次每个调用一次 read_file（6 次调用，同一条回复里全部发出）：\n{listing}"}]
+        if cwd_mode:
+            msgs = [{"role": "system", "content": f"You are a coding agent. Your working directory is {CWD}. "
+                                                  "Always pass absolute paths to tools."},
+                    {"role": "user", "content": "读一下工作目录里的 " + "、".join(CWD_FILES) + "，同一条回复里把 6 次 read_file 全部发出，用完整路径。"}]
+        else:
+            msgs = [{"role": "system", "content": "你是一个 Agent。调用工具时，路径必须和用户给的一字不差。"},
+                    {"role": "user", "content": "下面 6 个文件，请依次每个调用一次 read_file（6 次调用，同一条回复里全部发出）：\n" + "\n".join(COPY_PATHS)}]
         j = srv.post("/v1/chat/completions", {"model": "qwen3.6-35b-a3b", "temperature": temperature, "max_tokens": 1500,
                                               "messages": msgs, "tools": AGENT_TOOLS, "parallel_tool_calls": True,
                                               "seed": 1000 + r})
@@ -114,11 +123,11 @@ def copy_test(srv, runs, temperature):
             except Exception:
                 got.append("<参数不是 JSON>")
         calls += len(got)
-        for p in COPY_PATHS:
+        for p in expected:
             total += 1
             if p in got:
                 ok += 1
-        wrong += [g for g in got if g not in COPY_PATHS][:3]
+        wrong += [g for g in got if g not in expected][:3]
     return {"copy_exact": ok, "copy_total": total, "copy_calls": calls, "copy_wrong_examples": wrong[:5]}
 
 
@@ -228,6 +237,7 @@ def main():
     ap.add_argument("--agent", action="store_true", help="再跑一段多轮 Agent 对话，看追问时重读多少 token")
     ap.add_argument("--side", action="store_true", help="多轮 Agent 中间插一个旁路请求，看主对话能不能从缓存恢复")
     ap.add_argument("--copy", type=int, default=0, help="抄长路径测试跑几次（0 = 不跑）")
+    ap.add_argument("--copy-cwd", type=int, default=0, help="抄长路径（工作目录在系统提示里）测试跑几次（0 = 不跑）")
     ap.add_argument("--copy-temp", type=float, default=0.7)
     ap.add_argument("--skip-speed", action="store_true", help="不测速度，只跑 --copy / --agent")
     ap.add_argument("--log", default="")
@@ -269,6 +279,8 @@ def main():
             chat_tg.append(j3["timings"]["predicted_per_second"])
         if a.copy:
             res.update(copy_test(srv, a.copy, a.copy_temp))
+        if a.copy_cwd:
+            res.update({"cwd_" + k: v for k, v in copy_test(srv, a.copy_cwd, a.copy_temp, cwd_mode=True).items()})
         if a.agent:
             steps = agent_turns(srv, a.ctx_words // 2, side=a.side)
             res["agent_steps"] = steps
