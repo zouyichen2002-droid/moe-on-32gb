@@ -1,0 +1,1 @@
+{"label": "baseline", "extra": [], "drop": [], "time": "2026-10-23 08:42:02", "load_s": 13.3, "ctx_tokens": 7522, "pp_tps": 1402.7, "pp_all": [1351.9, 1402.7, 1410.0], "tg_tps": 53.8, "tg_all": [58.4, 53.8, 53.4], "turn_prompt_n": 10, "turn_prompt_ms": 163, "proc_uss_gb": 9.28, "sys_avail_min_gb": 3.68, "gpu_peak_mib": 11543}
