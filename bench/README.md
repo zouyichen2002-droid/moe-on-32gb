@@ -10,6 +10,15 @@ python bench/bench.py --server <llama-server.exe> --model <gguf> --label 名字 
 - 需要 Python 3.9+ 和 `psutil`；显存用 `nvidia-smi` 读
 - 进程设成「低于正常」优先级
 
+`agent_task.py` 测端到端：照 DSH 的方式跑一个多步任务（读一个 CSV、建 5 个文件夹写 6 个文件），记总耗时和读提示 / 生成各花多少。比测速脚本更接近真实使用，适合比较两套参数：
+
+```bash
+python bench/agent_task.py <llama-server.exe> <gguf> default bench/runs/mine-e2e.jsonl
+python bench/agent_task.py <llama-server.exe> <gguf> fast bench/runs/mine-e2e.jsonl --moe-cache-mib 2048
+```
+
+模型每次写的字数不一样，比较时要按生成 token 数折算。
+
 ## 测什么
 
 | 字段 | 是什么 |

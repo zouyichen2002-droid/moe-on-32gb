@@ -1,0 +1,6 @@
+{"label": "default-1", "extra": [], "steps": 3, "wall_s": 18.8, "prompt_s": 3.6, "gen_s": 15.0, "gen_tokens": 815, "files": 7}
+{"label": "fast-1", "extra": ["--moe-cache-mib", "2048"], "steps": 3, "wall_s": 15.6, "prompt_s": 5.1, "gen_s": 10.3, "gen_tokens": 648, "files": 7}
+{"label": "default-2", "extra": [], "steps": 3, "wall_s": 16.9, "prompt_s": 3.4, "gen_s": 13.4, "gen_tokens": 720, "files": 7}
+{"label": "fast-2", "extra": ["--moe-cache-mib", "2048"], "steps": 3, "wall_s": 15.8, "prompt_s": 4.9, "gen_s": 10.8, "gen_tokens": 658, "files": 7}
+{"label": "default-3", "extra": [], "steps": 3, "wall_s": 19.0, "prompt_s": 3.5, "gen_s": 15.4, "gen_tokens": 780, "files": 7}
+{"label": "fast-3", "extra": ["--moe-cache-mib", "2048"], "steps": 3, "wall_s": 14.8, "prompt_s": 4.9, "gen_s": 9.8, "gen_tokens": 601, "files": 7}
