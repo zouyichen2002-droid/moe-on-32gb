@@ -1,8 +1,15 @@
 # moe-on-32gb
 
-> **English summary.** Run **Qwen3.6-35B-A3B** (MoE: 35B total, ~3B active per token) locally on a **32 GB RAM + 12 GB VRAM** laptop with stock llama.cpp — no custom engine. Experts that don't fit in VRAM live in system RAM (`--fit on`), the model is loaded without mmap (`--load-mode none`, the key flag on a 32 GB machine), context is 32k, and sampling is tuned to stop agent tool-call loops. Measured ~62 tok/s generation on an RTX 5070 Ti Laptop (12 GB). One script (`start-llama.sh`) plus a per-flag explanation (`docs/params.md`). The idea of "experts in RAM, the rest on GPU" comes from [Strata](https://github.com/Niko1221/Strata), which targets a 125B model and needs 64 GB RAM; this repo is the 32 GB route. It is not based on Strata's code.
+> **English summary.** Run **Qwen3.6-35B-A3B** (MoE: 35B total, ~3B active per token) locally on a **32 GB RAM + 12 GB VRAM** laptop with stock llama.cpp — no custom engine. Experts that don't fit in VRAM live in system RAM (`--fit on`), the model is loaded without mmap (`--load-mode none`, the key flag on a 32 GB machine), context is 32k, and sampling is tuned to stop agent tool-call loops. Measured ~62 tok/s generation on an RTX 5070 Ti Laptop (12 GB). One script (`start-llama.sh`) plus a per-flag explanation (`docs/params.md`), and a ready-to-use patch for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh/`, `docs/dsh.md`): local provider, a lean preset, and compaction thresholds recomputed for a 32k window (with the stock 65,536-token headroom, compaction never triggers on windows under ~70k). The idea of "experts in RAM, the rest on GPU" comes from [Strata](https://github.com/Niko1221/Strata), which targets a 125B model and needs 64 GB RAM; this repo is the 32 GB route. It is not based on Strata's code.
 
-在 **32 GB 内存 + 12 GB 显存** 的笔记本上，用原版 llama.cpp 跑 **Qwen3.6-35B-A3B**（MoE：总共 35B 参数，每个字只用约 3B），当本地 Agent 的模型。不用另装推理引擎：一个启动脚本 + 每个参数为什么这么设。
+在 **32 GB 内存 + 12 GB 显存** 的笔记本上，用原版 llama.cpp 跑 **Qwen3.6-35B-A3B**（MoE：总共 35B 参数，每个字只用约 3B），当本地 Agent 的模型。不用另装推理引擎：一个启动脚本 + 每个参数为什么这么设；另附接 DeepSeek Harness（DSH）的补丁和启动脚本。
+
+| 文件 | 是什么 |
+|---|---|
+| `start-llama.sh` | 起模型服务（OpenAI 兼容接口） |
+| `docs/params.md` | 每个参数为什么这么设、踩过的坑 |
+| `dsh/cordis.patch.yml`、`dsh/start-dsh-web.sh` | 接 DSH 网页界面：本地模型、精简预设、按 32k 重配的压缩线 |
+| `docs/dsh.md` | DSH 的搭法、实测、踩过的坑、安全 |
 
 ## 和 Strata 的关系
 
@@ -60,7 +67,11 @@ curl http://127.0.0.1:8081/v1/chat/completions \
   -d '{"model":"qwen3.6-35b-a3b","messages":[{"role":"user","content":"用一句话介绍你自己"}]}'
 ```
 
-### 接 Agent 时要注意
+### 接 DeepSeek Harness
+
+现成的补丁和启动脚本在 `dsh/`，步骤见 [docs/dsh.md](docs/dsh.md)。2026-10-23 在新的空配置上原样搭过一遍：新会话默认用「本地 32k」预设和本地模型，一个查目录的小任务 1 轮 4 步、13 秒、61 token/秒。
+
+### 接别的 Agent 时要注意
 
 - **上下文窗口填 32768**，输出上限 4096 够用
 - **压缩线要按 32k 重算**。有的 Agent 默认按大模型的窗口留余量（DeepSeek Harness 0.2.0-rc.2 默认留 65536 token），32k 窗口下算出来是负数，结果是只警告、从不主动压缩。我们用的是：触发线 = min(窗口 × 0.8, 窗口 − 输出上限 − 1024) = 26214

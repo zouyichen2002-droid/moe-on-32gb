@@ -1,0 +1,126 @@
+# moe-on-32gb：DeepSeek Harness（DSH 0.2.0-rc.2）接本地 llama.cpp 的补丁层
+# 放到 $DSH_HOME/profiles/web/cordis.patch.yml（覆盖 DSH 生成的那份空补丁），改完用
+#   dsh --profile web --dump-config
+# 看合并结果。说明见 docs/dsh.md。
+#
+# 做了四件事：
+#   ① 模型 → 本地 llama-server（start-llama.sh，127.0.0.1:8081），新会话默认用它
+#   ② 精简预设「本地 32k」：只留文件、命令行、后台任务、技能、交付等常用工具，压缩线按 32k 窗口重配
+#   ③ 选目录 → 网页里的对话框（不在桌面上弹系统窗口）
+#   ④ 原装 standard 预设原样留着，界面里随时能切回去对照
+
+# ① 本地模型。密钥从环境变量 LOCAL_LLAMA_KEY 读（start-dsh-web.sh 从 llama.key 读出来再设），别写进这个文件
+# 注意：按 id 覆盖是整块替换 —— DSH 默认带的 DeepSeek 在线模型会被拿掉；要用就在 providers 下加回来
+- id: llm-pi-ai
+  config:
+    providers:
+      local-llama:
+        apiKeyEnv: LOCAL_LLAMA_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:8081/v1
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        models:
+          - id: qwen3.6-35b-a3b    # 要和 start-llama.sh 的 --alias 一样
+            input: [ text ]
+            contextWindow: 32768   # 和 start-llama.sh 的 -c 一样
+            maxTokens: 4096        # 每次请求的输出上限，也是压缩算账时的输出预留；Agent 的回复一般 1–3K
+- id: agent-default-model
+  config:
+    provider: local-llama
+    model: qwen3.6-35b-a3b
+
+# ② 精简预设。为什么另建、不改 standard：预设里的子行不能用补丁按 id 改（补丁只往 group 里找），要改只能整份重抄
+# 和 standard 比，去掉了：子 Agent / workflow、长期目标、计划模式。固定开销见 docs/dsh.md
+- insert:
+    - id: preset-local32k
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: local32k
+        name: 本地 32k
+        description: 本地模型用的精简预设：文件、命令行、后台任务、技能、联网抓取、交付；压缩按 32k 窗口配
+        order: 0
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              suffix: Your working directory is {{cwd}}.
+              prefix: You are a coding agent powered by the {{model}} model.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            # 自己写的技能放别的目录的话，在这里加：
+            # config:
+            #   customSkillDirs:
+            #     - /path/to/your/skills
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+                config:
+                  # 原装按「留 65536 token 余量」算触发线：floor(min(W×0.8, W−输出预留−65536))，32k 窗口下是负数
+                  # → 只警告一次、从不主动压缩。这里只给本地模型重配，以后接大窗口的在线模型照样走默认
+                  modelPolicies:
+                    - provider: local-llama
+                      model: qwen3.6-35b-a3b
+                      headroomTokens: 1024   # 触发线 = floor(min(32768×0.8, 32768−4096−1024)) = 26214
+                      maxTokens: 1024        # 摘要的输出上限
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 4096     # standard 是 8192 / 4096 / 1024；本地窗口小，减半
+                  headChars: 2048
+                  tailChars: 1024
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web               # web_fetch 不要密钥就能用；web_search 走 DeepSeek 在线接口，要 DEEPSEEK_API_KEY
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+- id: agent-preset-registry
+  config:
+    default: local32k
+
+# ③ 选目录用网页里的对话框。本机 + Windows 时自动选择器会选原生窗口（弹在桌面上）
+# 补丁不能改已有条目的插件名 → 关掉自动选择器，另插 browse 的两半（本机服务 + 网页界面）；只插一半的话「添加工作区」按钮会消失
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: directory-picker-browse-ui
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
