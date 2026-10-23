@@ -1,0 +1,5 @@
+*.key
+*.gguf
+*.log
+llama.cpp/
+models/
