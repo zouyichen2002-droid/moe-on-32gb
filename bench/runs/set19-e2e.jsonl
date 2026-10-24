@@ -1,0 +1,4 @@
+{"label": "e2e-base-1", "extra": [], "steps": 3, "wall_s": 33.2, "prompt_s": 10.4, "gen_s": 22.6, "gen_tokens": 660, "files": 7}
+{"label": "e2e-ngrammod-1", "extra": ["--spec-type", "ngram-mod"], "steps": 5, "wall_s": 43.8, "prompt_s": 11.3, "gen_s": 32.3, "gen_tokens": 812, "files": 7}
+{"label": "e2e-base-2", "extra": [], "steps": 3, "wall_s": 37.0, "prompt_s": 10.4, "gen_s": 26.6, "gen_tokens": 816, "files": 7}
+{"label": "e2e-ngrammod-2", "extra": ["--spec-type", "ngram-mod"], "steps": 3, "wall_s": 34.9, "prompt_s": 10.4, "gen_s": 24.5, "gen_tokens": 768, "files": 7}

@@ -49,6 +49,12 @@ Strata 跑的是 125B 的模型，中文正常的版本要 64 GB 内存，32 GB 
 
 也测了 64k、128k 上下文（64k 只慢约 3%，可选）和 KV f16（没好处）。实测 DSH 每一步只重读新加的部分，时间主要花在生成上。
 
+晚上第三轮试了别的引擎和量化：
+- **n-gram 投机解码**（`bash start-llama.sh --spec-type ngram-mod`）：Agent 原样改写文件时快 2–3 倍，输出一字不差，多轮缓存和抄路径都不受影响。写新内容时基本没影响，先做成可选项
+- **PolyStrata**（Strata 的衍生项目）：它要的 UD-Q4_K_M 在这台 32 GB 机器上内存不够，没跑起来
+- **byteshape Q4_K_S**：生成只快 5–6%，读提示慢 11%，不换
+- **机器热了、忙了的时候别开快速配置**：显卡降频、内存紧时它会从约 60 掉到 20–30
+
 ### 2026-10-03 换模型时（llama.cpp b11259）
 
 用法是给一个本地 Agent（[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)）当模型，对照组是同一台机器上之前用的稠密模型 Qwen3.8-27B（UD-IQ4_XS，上下文 16k）。

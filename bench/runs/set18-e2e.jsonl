@@ -1,0 +1,4 @@
+{"label": "e2e-iq4xs-1", "extra": [], "steps": 5, "wall_s": 37.2, "prompt_s": 11.3, "gen_s": 25.7, "gen_tokens": 783, "files": 7}
+{"label": "e2e-q4ks-1", "extra": [], "steps": 8, "wall_s": 35.1, "prompt_s": 12.6, "gen_s": 22.2, "gen_tokens": 672, "files": 7}
+{"label": "e2e-iq4xs-2", "extra": [], "steps": 3, "wall_s": 53.3, "prompt_s": 23.3, "gen_s": 29.9, "gen_tokens": 776, "files": 7}
+{"label": "e2e-q4ks-2", "extra": [], "steps": 8, "wall_s": 29.9, "prompt_s": 12.3, "gen_s": 17.3, "gen_tokens": 651, "files": 7}

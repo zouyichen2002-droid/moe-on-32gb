@@ -147,6 +147,42 @@ def copy_test(srv, runs, temperature, cwd_case=None):
             "copy_wrong_examples": wrong[:5]}
 
 
+def make_code(n_funcs=24):
+    """一个约 1,500 token 的 Python 文件：结构相似的小函数，给改写测试用。"""
+    parts = ["import json", "import os", ""]
+    for i in range(n_funcs):
+        parts += [f"def load_part_{i:02d}(root):",
+                  f"    path = os.path.join(root, 'part_{i:02d}.json')",
+                  "    if not os.path.exists(path):",
+                  "        return None",
+                  "    with open(path, encoding='utf-8') as f:",
+                  f"        data = json.load(f)",
+                  f"    return {{'id': {i}, 'size': len(data), 'name': 'part_{i:02d}'}}",
+                  ""]
+    return "\n".join(parts)
+
+
+def rewrite_test(srv, runs):
+    """改写文件：把上下文里的代码原样输出一遍、只改一个函数名。Agent 改文件时常这样，n-gram 投机解码专门加速这种情况。
+    记生成速度和输出跟正确答案的相似度（difflib，1.0 = 一字不差）。"""
+    import difflib
+    code = make_code()
+    want = code.replace("def load_part_07(", "def read_part_07(")
+    rates, sims = [], []
+    for r in range(runs):
+        j = srv.post("/v1/chat/completions", {
+            "model": "qwen3.6-35b-a3b", "temperature": 0, "max_tokens": 3000,
+            "messages": [{"role": "user", "content": "把下面文件里的函数 load_part_07 改名为 read_part_07，其余一个字都不要改，"
+                                                     "只输出改好的完整文件，不要加代码块标记和任何说明：\n\n" + code}]})
+        out = (j["choices"][0]["message"].get("content") or "").strip()
+        if out.startswith("```"):
+            out = out.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        rates.append(j["timings"]["predicted_per_second"])
+        sims.append(difflib.SequenceMatcher(None, out, want.strip()).ratio())
+    return {"rewrite_tg_tps": round(statistics.median(rates), 1), "rewrite_tg_all": [round(x, 1) for x in rates],
+            "rewrite_similarity": round(min(sims), 4)}
+
+
 def drop_args(args, drops):
     out, i = [], 0
     while i < len(args):
@@ -256,6 +292,7 @@ def main():
     ap.add_argument("--copy-cwd", type=int, default=0, help="抄长路径（工作目录在系统提示里）测试跑几次（0 = 不跑）")
     ap.add_argument("--copy-cn", type=int, default=0, help="抄长路径（中文工作目录、文件名里重复歌名）测试跑几次（0 = 不跑）")
     ap.add_argument("--copy-temp", type=float, default=0.7)
+    ap.add_argument("--rewrite", type=int, default=0, help="改写文件测试跑几次（0 = 不跑）：原样输出约 1,500 token 的代码、只改一个函数名")
     ap.add_argument("--skip-speed", action="store_true", help="不测速度，只跑 --copy / --agent")
     ap.add_argument("--log", default="")
     a, extra = ap.parse_known_args()
@@ -294,6 +331,8 @@ def main():
             j3 = srv.post("/v1/chat/completions", {"model": "qwen3.6-35b-a3b", "temperature": 0, "max_tokens": a.gen,
                                                    "messages": [{"role": "user", "content": CHAT_TASK + f"（第 {r + 1} 次）"}]})
             chat_tg.append(j3["timings"]["predicted_per_second"])
+        if a.rewrite:
+            res.update(rewrite_test(srv, a.rewrite))
         if a.copy:
             res.update(copy_test(srv, a.copy, a.copy_temp))
         if a.copy_cwd:

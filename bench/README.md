@@ -19,6 +19,12 @@ python bench/agent_task.py <llama-server.exe> <gguf> fast bench/runs/mine-e2e.js
 
 模型每次写的字数不一样，比较时要按生成 token 数折算。
 
+`client_bench.py` 只当客户端，对任何 OpenAI 兼容的服务（llama-server、PolyStrata 等）用流式接口从客户端计时：读长提示的首字延迟、生成速度、抄路径、多步 Agent 任务。比较不同引擎时用它，保证是同一把尺子：
+
+```bash
+python bench/client_bench.py http://127.0.0.1:8081/v1 <密钥> 名字 bench/runs/mine-client.jsonl
+```
+
 ## 测什么
 
 | 字段 | 是什么 |
@@ -42,6 +48,7 @@ python bench/agent_task.py <llama-server.exe> <gguf> fast bench/runs/mine-e2e.js
 | `--copy N` | 抄长路径：6 条前缀很长、彼此相似的中文路径写在用户消息里，让模型在一条回复里调 6 次工具，跑 N 次，数参数里一字不差的有几条 |
 | `--copy-cn N` | 中文工作目录、文件名里重复歌名（翻唱项目那种路径）；看 presence penalty 会不会罚路径里重复的字（实测 0 / 0.5 / 1.5 都是 72/72）。也数工具调用漏进正文的次数 |
 | `--copy-cwd N` | 抄长路径的另一种测法，更像 Agent 框架：工作目录写在系统提示里，用户只给 6 个文件名，模型要自己拼完整路径。DRY 防复读的问题只有这种测法测得出来（DRY 0.8 时 26/72，presence 1.5 时 72/72） |
+| `--rewrite N` | 改写文件：约 1,500 token 的代码，改一个函数名、其余原样输出，跑 N 次；记生成速度和输出跟正确答案的相似度（1.0 = 一字不差）。n-gram 投机解码专门加速这种情况 |
 | `--skip-speed` | 不测速度，只跑上面这些 |
 
 ## 注意
